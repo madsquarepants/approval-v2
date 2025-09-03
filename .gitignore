@@ -1,0 +1,17 @@
+# Python
+api/.venv/
+__pycache__/
+*.pyc
+app.db
+api/.env
+
+# Node / Next.js
+app/node_modules/
+app/.next/
+app/.turbo/
+app/.vercel/
+app/.env.local
+
+# Misc
+.DS_Store
+*.zip
