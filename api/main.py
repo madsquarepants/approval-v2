@@ -63,14 +63,25 @@ def _upgrade_schema():
 _upgrade_schema()
 # -----------------------------------------------------------
 
-# CORS (relax for now; tighten later to your Vercel origin)
+# api/main.py (near the top imports)
+import os
+from fastapi.middleware.cors import CORSMiddleware
+
+# Comma-separated origins via env; defaults cover prod + local dev
+DEFAULT_ORIGINS = "https://approval-v2.vercel.app,http://localhost:3000"
+ALLOWED_ORIGINS = [
+    o.strip() for o in os.getenv("FRONTEND_ORIGINS", DEFAULT_ORIGINS).split(",") if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=False,                 # we use Bearer tokens, not cookies
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
+    max_age=86400,
 )
+
 
 # Routers
 app.include_router(auth.router)
