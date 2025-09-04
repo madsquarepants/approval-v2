@@ -3,6 +3,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from dotenv import load_dotenv
+from sqlalchemy import text
+import os
 
 # Load local .env in dev; on Render you'll use env vars
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
@@ -23,24 +25,49 @@ app = FastAPI(title="Approval v2 API")
 # Create tables
 Base.metadata.create_all(bind=engine)
 
-# --- SQLite-only schema tweak (skip on Postgres/Render) ---
-from sqlalchemy import text  # noqa: E402
-if engine.dialect.name == "sqlite":
+# ---------- one-time schema upgrades (idempotent) ----------
+def _upgrade_schema():
     with engine.connect() as conn:
-        try:
+        if engine.dialect.name == "postgresql":
             conn.exec_driver_sql(
-                'ALTER TABLE subscriptions ADD COLUMN snoozed_until DATETIME'
+                "ALTER TABLE subscriptions "
+                "ADD COLUMN IF NOT EXISTS cancel_status TEXT DEFAULT 'active';"
             )
-        except Exception:
-            # column already exists or table not present yet
-            pass
-# ----------------------------------------------------------
+            conn.exec_driver_sql(
+                "ALTER TABLE subscriptions "
+                "ADD COLUMN IF NOT EXISTS canceled_at TIMESTAMPTZ;"
+            )
+        elif engine.dialect.name == "sqlite":
+            # add cancel_status
+            try:
+                conn.exec_driver_sql(
+                    "ALTER TABLE subscriptions ADD COLUMN cancel_status TEXT DEFAULT 'active'"
+                )
+            except Exception:
+                pass
+            # add canceled_at
+            try:
+                conn.exec_driver_sql(
+                    "ALTER TABLE subscriptions ADD COLUMN canceled_at DATETIME"
+                )
+            except Exception:
+                pass
+            # legacy: add snoozed_until column if you used it locally
+            try:
+                conn.exec_driver_sql(
+                    "ALTER TABLE subscriptions ADD COLUMN snoozed_until DATETIME"
+                )
+            except Exception:
+                pass
 
-# CORS (relax for now; tighten later)
+_upgrade_schema()
+# -----------------------------------------------------------
+
+# CORS (relax for now; tighten later to your Vercel origin)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -56,4 +83,8 @@ app.include_router(events.router)
 
 @app.get("/")
 def root():
+    return {"ok": True}
+
+@app.get("/healthz")
+def healthz():
     return {"ok": True}
