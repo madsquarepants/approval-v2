@@ -1,24 +1,53 @@
+# api/routers/approvals.py
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from ..db import get_db
-from ..models import Subscription, Approval, SubStatus, User
-from ..schemas import ApprovalIn, SubscriptionOut
-from ..deps import get_current_user
+from sqlalchemy import text
+
+from ..db import SessionLocal
+from ..utils.auth import get_current_user
 from ..utils.log import log_event
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
-@router.post("/{subscription_id}", response_model=SubscriptionOut)
-def decide(subscription_id: int, payload: ApprovalIn, db: Session = Depends(get_db), me = Depends(get_current_user)):
-    sub = db.query(Subscription).filter_by(id=subscription_id).first()
-    if not sub:
-        raise HTTPException(404, "Not found")
-    dec = payload.decision.lower()
-    db.add(Approval(user_id=sub.user_id, subscription_id=sub.id, decision=dec))
-    if dec == "deny":
-        sub.status = SubStatus.canceling
-    # log
-    user = db.query(User).filter_by(email=me.email).first()
-    log_event(db, user.id, "approval.decide", f"{dec.upper()} {sub.merchant}", {"subscription_id": sub.id})
-    db.commit(); db.refresh(sub)
-    return sub
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@router.post("")
+async def decide(payload: dict, user=Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Accepts: { "subscription_id": number, "decision": "approve" | "deny" }
+    Records the decision and logs an event.
+    (If you have an approvals table, you can upsert into it; for MVP we just log.)
+    """
+    sub_id = payload.get("subscription_id")
+    decision = (payload.get("decision") or "").lower().strip()
+
+    if not sub_id:
+        raise HTTPException(400, "subscription_id is required")
+    if decision not in {"approve", "deny"}:
+        raise HTTPException(400, "decision must be 'approve' or 'deny'")
+
+    # ensure subscription exists
+    row = db.execute(text("SELECT id FROM subscriptions WHERE id = :id"), {"id": sub_id}).mappings().first()
+    if not row:
+        raise HTTPException(404, "subscription not found")
+
+    # (optional) if you have an approvals table, upsert here
+    # try:
+    #     db.execute(text("""
+    #         INSERT INTO approvals (subscription_id, user_id, decision)
+    #         VALUES (:sid, :uid, :dec)
+    #         ON CONFLICT (subscription_id) DO UPDATE SET decision = :dec
+    #     """), {"sid": sub_id, "uid": user.id, "dec": decision})
+    # except Exception:
+    #     pass
+
+    # log event
+    log_event(db, user.id, f"approval.{decision}", f"{decision} sub {sub_id}", {"subscription_id": sub_id})
+    db.commit()
+
+    return {"subscription_id": sub_id, "decision": decision}
