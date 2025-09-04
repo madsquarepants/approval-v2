@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 
+// ----- types -----
 type Subscription = {
   id: number;
   merchant: string;
@@ -11,12 +12,13 @@ type Subscription = {
   amount_cents?: number | null;
   price?: number | string | null;
   amount?: number | string | null;
-  interval?: string | null; // "monthly", "yearly", etc
-  status: string; // "active" | "canceling" | "canceled"
+  interval?: string | null;      // "monthly", "yearly", etc.
+  status?: string;               // legacy
+  cancel_status?: string | null; // new: 'active' | 'in_progress' | 'canceled' | 'failed' | 'attention_needed'
   next_renewal_at?: string | null;
 };
 
-// ---------- helpers ----------
+// ----- helpers -----
 const toCents = (v: any): number | null => {
   if (v == null) return null;
   if (typeof v === "number") return v >= 1000 ? Math.round(v) : Math.round(v * 100);
@@ -48,7 +50,7 @@ const prettyInterval = (x: any): string => {
 const fmtMoney = (cents?: number | null) =>
   typeof cents === "number" ? `$${(cents / 100).toFixed(2)}` : "";
 
-// ---------- page ----------
+// ----- page -----
 export default function Dashboard() {
   const [token, setToken] = useState<string>("");
   const [subs, setSubs] = useState<Subscription[]>([]);
@@ -90,15 +92,6 @@ export default function Dashboard() {
     }
   }
 
-  async function approve(id: number) {
-    await decide(id, "approve");
-  }
-
-  async function deny(id: number) {
-    await decide(id, "deny");
-  }
-
-  // Uses body { subscription_id, decision } (adjust if your API uses /approvals/{id})
   async function decide(id: number, decision: "approve" | "deny") {
     if (!token) return;
     setBusyId(id);
@@ -116,7 +109,6 @@ export default function Dashboard() {
     }
   }
 
-  // Uses body { subscription_id }
   async function startCancel(id: number) {
     if (!token) return;
     setBusyId(id);
@@ -147,8 +139,8 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* build marker so you know this version is live */}
-      <div style={{ color: "#64748b", fontSize: 12, marginTop: 6 }}>build: dashboard-clean-v2</div>
+      {/* build marker */}
+      <div style={{ color: "#64748b", fontSize: 12, marginTop: 6 }}>build: dashboard-clean-v4</div>
 
       {error && <p style={{ color: "crimson", marginTop: 12 }}>{error}</p>}
 
@@ -164,16 +156,16 @@ export default function Dashboard() {
           {subs.map((s) => {
             const cents = amountCents(s);
             const intv = prettyInterval(s.interval);
+            const cStatus = (s as any).cancel_status || s.status || "active";
             return (
               <article key={s.id} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "baseline" }}>
                   <div style={{ fontSize: 20, fontWeight: 600 }}>
-                    {s.merchant}{s.plan ? ` — ${s.plan}` : ""}
-                    {" "}
+                    {s.merchant}{s.plan ? ` — ${s.plan}` : ""}{" "}
                     {cents != null ? `${fmtMoney(cents)}${intv ? `/${intv}` : ""}` : ""}
                   </div>
                   <div style={{ color: "#475569" }}>
-                    Status: <b>{s.status}</b>
+                    Status: <b>{cStatus}</b>
                     {s.next_renewal_at && (
                       <span> — next {new Date(s.next_renewal_at).toLocaleDateString()}</span>
                     )}
@@ -183,14 +175,14 @@ export default function Dashboard() {
                 <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
                   <button
                     type="button"
-                    onClick={() => approve(s.id)}
+                    onClick={() => decide(s.id, "approve")}
                     disabled={busyId === s.id}
                   >
                     Approve
                   </button>
                   <button
                     type="button"
-                    onClick={() => deny(s.id)}
+                    onClick={() => decide(s.id, "deny")}
                     disabled={busyId === s.id}
                   >
                     Deny
@@ -198,7 +190,7 @@ export default function Dashboard() {
                   <button
                     type="button"
                     onClick={() => startCancel(s.id)}
-                    disabled={busyId === s.id || s.status === "canceled"}
+                    disabled={busyId === s.id || cStatus === "in_progress" || cStatus === "canceled"}
                   >
                     Start Cancellation
                   </button>
