@@ -1,14 +1,23 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8080";
+const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE || "https://approval-v2.onrender.com";
 
-export function authHeaders(token?: string) {
+function authHeaders(token?: string) {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export async function api(path: string, opts: RequestInit = {}, token?: string) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const url = `${API_BASE}${path}`;
+  const res = await fetch(url, {
     ...opts,
-    headers: { "Content-Type": "application/json", ...(opts.headers||{}), ...authHeaders(token) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(opts.headers || {}),
+      ...authHeaders(token),
+    },
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text || `Request failed: ${res.status} ${res.statusText}`);
+  }
   return res.json();
 }
