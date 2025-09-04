@@ -194,6 +194,14 @@ export default function Dashboard() {
                   >
                     Start Cancellation
                   </button>
+<button
+  type="button"
+  onClick={() => decide(s.id, "deny")}
+  disabled={busyId === s.id}
+>
+  Deny & Cancel
+</button>
+
                 </div>
               </article>
             );
