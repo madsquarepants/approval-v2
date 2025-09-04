@@ -1,69 +1,66 @@
-import { useEffect, useState } from "react";
-import Router from "next/router";
+import { useState } from "react";
 import { api } from "../lib/api";
-import { usePlaidLink } from "react-plaid-link";
 
 export default function Home() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [token, setToken] = useState<string | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [linkToken, setLinkToken] = useState<string | null>(null);
-  const [openWhenReady, setOpenWhenReady] = useState(false);
+  const [out, setOut] = useState<string>("");
 
-  const { open, ready } = usePlaidLink({
-    token: linkToken || "",
-    onSuccess: async (public_token) => {
-      // 1) exchange token, 2) (still) fake scan, 3) dashboard
-      await api("/plaid/exchange", { method: "POST", body: JSON.stringify({ public_token }) }, token!);
-      await api("/subscriptions/scan_real", { method: "POST" }, token!);
-      Router.push("/dashboard");
-    },
-    onExit: () => setMsg("Plaid closed."),
-  });
+  const log = (v: any) => setOut(typeof v === "string" ? v : JSON.stringify(v, null, 2));
 
-  useEffect(() => {
-    if (openWhenReady && ready) open();
-  }, [openWhenReady, ready, open]);
-
-  const startAuth = async (mode: "signup" | "login") => {
-    setMsg(null);
-    const data = await api(`/auth/${mode}`, {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    });
-    const t = data.access_token as string;
-    localStorage.setItem("token", t);
-    setToken(t);
+  const signup = async () => {
+    try {
+      const data = await api("/auth/signup", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      });
+      log(data);
+    } catch (e: any) {
+      log(`SIGNUP ERROR: ${e?.message || e}`);
+    }
   };
 
-  const connectBank = async () => {
-    if (!token) { setMsg("Please sign up or log in first."); return; }
-    const res = await api("/plaid/link_token", { method: "POST" }, token);
-    setLinkToken(res.link_token);
-    setOpenWhenReady(true); // auto-opens Link once SDK is ready
+  const login = async () => {
+    try {
+      const data = await api("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      });
+      log(data);
+      if (data?.access_token) localStorage.setItem("token", data.access_token);
+    } catch (e: any) {
+      log(`LOGIN ERROR: ${e?.message || e}`);
+    }
   };
 
   return (
-    <main style={{ maxWidth: 480, margin: "72px auto", fontFamily: "system-ui" }}>
-      <h1>Approval v2 — Onboarding</h1>
-      <p>1) Sign up or log in → 2) Connect bank via Plaid → 3) We’ll scan and show your subs.</p>
+    <main style={{ maxWidth: 520, margin: "48px auto", fontFamily: "system-ui" }}>
+      <h1>Approval — Sign In</h1>
+      <div style={{ display: "grid", gap: 8 }}>
+        <label>Email</label>
+        <input
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="you@example.com"
+          style={{ padding: 8, border: "1px solid #ddd", borderRadius: 8 }}
+        />
+        <label>Password</label>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="••••••••"
+          style={{ padding: 8, border: "1px solid #ddd", borderRadius: 8 }}
+        />
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <button type="button" onClick={signup}>Sign Up</button>
+          <button type="button" onClick={login}>Log In</button>
+        </div>
+      </div>
 
-      <label>Email</label>
-      <input value={email} onChange={e=>setEmail(e.target.value)} style={{ width:"100%", padding:8, marginBottom:8 }} />
-      <label>Password</label>
-      <input type="password" value={password} onChange={e=>setPassword(e.target.value)} style={{ width:"100%", padding:8, marginBottom:16 }} />
-
-      {!token ? (
-        <>
-          <button onClick={()=>startAuth("signup")} style={{ padding:"10px 16px", marginRight:8 }}>Sign Up</button>
-          <button onClick={()=>startAuth("login")} style={{ padding:"10px 16px" }}>Log In</button>
-        </>
-      ) : (
-        <button onClick={connectBank} style={{ padding:"10px 16px" }}>Connect bank (Plaid)</button>
-      )}
-
-      {msg && <p style={{ color:"crimson" }}>{msg}</p>}
+      <pre style={{ marginTop: 16, background: "#f8fafc", padding: 12, borderRadius: 8, whiteSpace: "pre-wrap" }}>
+        {out || "Results will appear here…"}
+      </pre>
     </main>
   );
 }
